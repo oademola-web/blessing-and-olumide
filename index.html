@@ -154,6 +154,14 @@ section{padding:104px 24px}
 .rsvp-form textarea{min-height:100px; resize:vertical}
 .rsvp-form .row{display:grid; grid-template-columns:1fr 1fr; gap:20px}
 .rsvp-form .btn{width:100%}
+.rsvp-card{max-width:640px; margin:46px auto 0; display:grid; gap:22px; justify-items:center; background:rgba(255,255,255,.06); border:1px solid rgba(255,255,255,.18); padding:44px 36px}
+.rsvp-card p{margin:0; color:#F3ECE8; font-size:1.1rem}
+.rsvp-card .btn{width:100%; max-width:420px}
+.rsvp-thanks{max-width:640px; margin:46px auto 0; background:rgba(255,255,255,.08); border:1px solid rgba(240,217,166,.5); padding:48px 32px}
+.rsvp-thanks .tick{width:64px; height:64px; margin:0 auto 18px; border-radius:50%; background:var(--gold); color:#2B1A10; display:flex; align-items:center; justify-content:center; font-size:2rem; font-weight:700}
+.rsvp-thanks h3{font-family:var(--serif); font-style:italic; font-weight:600; font-size:2.4rem; margin:0 0 8px; color:#fff}
+.rsvp-thanks p{margin:0; color:#F3ECE8; font-size:1.1rem}
+.btn:disabled{opacity:.7; cursor:wait; transform:none}
 .form-note{font-size:.92rem; color:#E6DCD8; text-align:center; margin:0}
 .form-error{color:#FFB4B4; font-size:.95rem; min-height:1.2em; margin:0; text-align:center; font-weight:600}
 @media (max-width:560px){.rsvp-form{padding:26px 18px}.rsvp-form .row{grid-template-columns:1fr}}
@@ -340,8 +348,7 @@ footer p{margin:14px 0 0; letter-spacing:.3em; font-size:.78rem; text-transform:
     <p class="kicker">Dress code</p>
     <h2 class="title">Get Your Aso Ebi</h2>
     <p class="lead">Celebrate with us in style!</p>
-    <div class="notice" role="note"><span aria-hidden="true">★</span>Gele &amp; Cap are compulsory for entry into the hall</div>
-    <p style="color:var(--muted);margin:14px 0 0;font-weight:500">Choose your preferred options below.</p>
+        <p style="color:var(--muted);margin:14px 0 0;font-weight:500">Choose your preferred options below.</p>
     <div class="packages" id="packages"></div>
   </div>
 </section>
@@ -352,15 +359,19 @@ footer p{margin:14px 0 0; letter-spacing:.3em; font-size:.78rem; text-transform:
     <h2 class="title">Confirm Your Attendance</h2>
     <p class="lead">Let us know if you'll be celebrating with us.</p>
     <form class="rsvp-form" id="rsvpForm" novalidate>
-      <div><label for="r-name">Full name</label><input id="r-name" required autocomplete="name"></div>
-      <div><label for="r-phone">Phone number</label><input id="r-phone" type="tel" autocomplete="tel"></div>
+      <div><label for="r-name">Full name</label><input id="r-name" name="name" required autocomplete="name"></div>
+      <div><label for="r-phone">Phone number</label><input id="r-phone" name="phone" type="tel" required autocomplete="tel"></div>
       <div><label for="r-attend">Will you attend?</label>
-        <select id="r-attend"><option>Yes</option><option>No</option></select></div>
-      <div><label for="r-note">A note for the couple (optional)</label><textarea id="r-note"></textarea></div>
+        <select id="r-attend" name="attending"><option>Yes</option><option>No</option></select></div>
+      <div><label for="r-note">A note for the couple (optional)</label><textarea id="r-note" name="note"></textarea></div>
       <p class="form-error" id="rsvpError" role="alert"></p>
-      <button class="btn btn-gold" type="submit">Confirm Your Attendance</button>
-      <p class="form-note">Your response opens in WhatsApp so you can send it straight to us.</p>
+      <button class="btn btn-gold" id="rsvpBtn" type="submit">Confirm Your Attendance</button>
     </form>
+    <div class="rsvp-thanks" id="rsvpThanks" hidden>
+      <div class="tick" aria-hidden="true">✓</div>
+      <h3 id="thanksTitle">Thank you!</h3>
+      <p id="thanksMsg">Your response has been received.</p>
+    </div>
   </div>
 </section>
 
@@ -461,14 +472,30 @@ document.getElementById("copyBtn").addEventListener("click", async () => {
   catch { toast(`Account: ${b.number}`); }
 });
 
-document.getElementById("rsvpForm").addEventListener("submit", e => {
+/* RSVP -> Google Sheet via Apps Script web app (URL ends in /exec) */
+const RSVP_SCRIPT_URL = "https://script.google.com/macros/s/AKfycbzd3mnh8hKcGd2seHPu5I5DIipCWJ7XuXR6OBsT26kJsB_NdV0WqYr8WlZCRdtIhrobHg/exec";
+document.getElementById("rsvpForm").addEventListener("submit", async e => {
   e.preventDefault();
-  const name = document.getElementById("r-name").value.trim();
-  const err = document.getElementById("rsvpError");
-  if (!name){ err.textContent = "Enter your full name to confirm your attendance."; document.getElementById("r-name").focus(); return; }
+  const form = e.target, err = document.getElementById("rsvpError"), btn = document.getElementById("rsvpBtn");
+  const name = form.elements.name.value.trim(), phone = form.elements.phone.value.trim();
+  if (!name){ err.textContent = "Please enter your full name."; form.elements.name.focus(); return; }
+  if (!phone){ err.textContent = "Please enter your phone number."; form.elements.phone.focus(); return; }
   err.textContent = "";
-  const msg = `RSVP for ${WEDDING.couple}'s wedding\nName: ${name}\nPhone: ${document.getElementById("r-phone").value || "-"}\nResponse: ${document.getElementById("r-attend").value}\nNote: ${document.getElementById("r-note").value || "-"}`;
-  window.open(wa(WEDDING.whatsapp, msg), "_blank");
+  btn.disabled = true; btn.textContent = "Sending…";
+  try {
+    const attending = form.elements.attending.value;
+    const data = new URLSearchParams({ name, phone, attending, note: form.elements.note.value.trim() });
+    await fetch(RSVP_SCRIPT_URL, { method: "POST", mode: "no-cors", body: data });
+    form.hidden = true;
+    document.getElementById("thanksTitle").textContent = `Thank you, ${name.split(" ")[0]}!`;
+    document.getElementById("thanksMsg").textContent = attending === "Yes"
+      ? "Your attendance is confirmed. We can't wait to celebrate with you on 19 December!"
+      : "We'll miss you, and we're grateful for your love and prayers.";
+    document.getElementById("rsvpThanks").hidden = false;
+  } catch {
+    err.textContent = "Something went wrong. Please check your internet connection and try again.";
+    btn.disabled = false; btn.textContent = "Confirm Your Attendance";
+  }
 });
 </script>
 </body>
